@@ -1,0 +1,156 @@
+﻿@page "/todo"
+@using BlazorApp2.Model
+@using System.Text.Json
+@using System.IO
+@using BlazorApp2.Model
+@inject IJSRuntime JSRuntime;
+@inject AufgabenContext EF;
+@inject ViewModel VM;
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+@attribute [Authorize]
+<div class="card shadow ">
+    <div class="card-body">
+        <h4 class="card-title">Wahnsinns ToDo</h4>
+        <div class="row">
+            <div class="col-md-12">
+                <div class="main-todo-input-wrap">
+                    <div class="main-todo-input fl-wrap">
+
+                        <div class="input-group mb-3">
+                            <input type="text" class="form-control" placeholder="Add Item" @bind-value="NeuAufgabe"
+                                   @bind-value:event="oninput" @onkeyup="@Check4Enter">
+                            <div class="input-group-append">
+                                <button class="btn btn-success" type="button"
+                                        @onclick="AddAufgabe2">
+                                    @*@onclick="AddAufgabe">*@
+                                    +
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-12">
+                <ul class="list-group list-group-flush">
+                    @if (Liste != null)
+                    {
+                        @foreach (var item in VM.Liste)
+                        {
+                            <li class="list-group-item">
+                                <div class="custom-control custom-checkbox">
+                                    @if (item.EditModus)
+                                    {
+                                        <div class="form-group">
+                                            <label for="exampleInputEmail1">Aufgabe Editieren</label>
+                                            <input class="form-control" id="exampleInputEmail1" @bind="item.Text"
+                                                   @onfocusout="@(e=>item.EditModus=false)">
+                                            <small id="emailHelp" class="form-text text-muted">Denk dran sie auch zu erledigen</small>
+                                        </div>
+
+                                    }
+                                    else
+                                    {
+                                        <input type="checkbox" class="custom-control-input" id="switch@(item.ID)" @bind="item.Erledigt">
+                                        <label class="custom-control-label" for="switch@(item.ID)"></label>
+                                        <span style='@(item.Erledigt ? "text-decoration-line:line-through" : "")'
+                                              @onclick="@(()=>item.EditModus=true)">@item.Text</span>
+                                        }
+                                </div>
+                            </li>
+                        }
+
+
+                    }
+
+                    else
+                    {
+                        <li class="list-group-item">
+                            Lade Daten
+                        </li>
+
+                    }
+                </ul>
+            </div>
+
+        </div>
+    </div>
+</div>
+@code {
+    public List<Aufgabe> Liste { get; set; }
+    public string NeuAufgabe { get; set; }
+    Random rnd = new Random();
+    public void AddAufgabe()
+    {
+        // ID = rnd.Next(100000)
+        var na = new Aufgabe() { Text = NeuAufgabe, Erledigt = false, EditModus = false, Bearbeiter = "" };
+        EF.Aufgaben.Add(na);
+        EF.SaveChanges();
+        Liste.Add(na);
+        var daten = JsonSerializer.Serialize(Liste);
+        JSRuntime.InvokeAsync<string>("localStorage.setItem", "daten", daten);
+
+        File.WriteAllText(AppDomain.CurrentDomain.GetData("DataDirectory").ToString() + @"\daten.json"
+            , daten);
+
+
+    }
+    public async void AddAufgabe2()
+    {
+        var na = new Aufgabe() { Text = NeuAufgabe, Erledigt = false, EditModus = false, Bearbeiter = "" };
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity.IsAuthenticated)
+        {
+            na.Bearbeiter=user.Identity.Name;
+        }
+
+
+        EF.Aufgaben.Add(na);
+        EF.SaveChanges();
+        VM.AddAufgabe(na);
+
+
+    }
+    protected override async Task OnInitializedAsync()
+    {
+
+        Liste = new List<Aufgabe>();
+        try
+        {
+            var daten = File.ReadAllText(AppDomain.CurrentDomain.GetData("DataDirectory").ToString() + @"\daten.json");
+
+            Liste = JsonSerializer.
+                Deserialize<Aufgabe[]>(daten).ToList();
+            Liste = EF.Aufgaben.ToList();
+        }
+        catch (Exception)
+        {
+
+
+        }
+        VM.Liste = EF.Aufgaben.ToList();
+        VM.PropertyChangedEvent += (_, __) => InvokeAsync(StateHasChanged);
+
+    }
+    public void Check4Enter(KeyboardEventArgs e) //Microsoft.AspNetCore.Components.Web ???
+    {
+        if (e.Key == "Enter")
+        {
+            AddAufgabe();
+        }
+    }
+    protected async override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+
+            var daten = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "daten");
+
+        }
+
+    }
+}
